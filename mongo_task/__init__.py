@@ -1,19 +1,19 @@
 #!/usr/bin/env python
-from __future__ import print_function
+from __future__ import print_function, absolute_import
 import os
+import sys
 import yaml
-import shutil
 import argparse
 import subprocess
-import contextlib
-import tempfile
 import traceback
+import hashlib
 
-import boto
 from bson.json_util import dumps
 from datetime import datetime
-from boto.s3.key import Key
-from pymongo import MongoClient
+
+from .env import setup_secure_env
+from .utils import enter_temp_directory
+from .services import upload_s3, connect_mongo
 
 
 REQUIRED_ENV_VARS = {
@@ -29,6 +29,7 @@ def main():
                         default='.env')
     parser.add_argument('-t', '--task', help='Task YAML file',
                         default='task.yaml')
+    parser.add_argument('--dry-run', action='store_true', help="Don't upload")
     args = parser.parse_args()
 
     original_env = setup_secure_env(args.env)
@@ -39,21 +40,52 @@ def main():
 
     with open(args.task) as f:
         task = yaml.load(f)
+    with open(args.task) as f:
+        metadata = {
+            'task_sha1': hashlib.sha1(f.read()).hexdigest(),
+            'command': ' '.join(sys.argv),
+            'hostname': os.uname()[1]
+        }
+
+    if 'job' not in task:
+        raise ValueError('task.yaml missing "job" entry')
+    if 'output_files' not in task:
+        task['output_files'] = []
 
     with enter_temp_directory():
-        run_task(task, original_env)
+        metadata['cwd'] = os.path.abspath(os.curdir)
+        run_task(task, original_env, metadata, dry_run=args.dry_run)
 
 
-def run_task(task, task_env):
-    assert 'task' in task
-    assert 'output_files' in task
+def run_task(task, env, metadata, dry_run=False):
+    """
+    Parameters
+    ----------
+    task : dict
+        Dict containing the parsed yaml file. Should contain
+         - job : list of lines to execute
+         - output_files : list of output files to upload to s3 after finishing
+    env : dict
+        Dict containing environment variables to be available in the
+        task execution environment. Additionally, this method will set up
+        'MONGOTASK_RECORD' env var, containing the job record
+    metadata : dict
+        Exta stuff to put in DB
+    dry_run : bool, default = False
+        If True, don't upload upload to the DB or push to S3
+    """
     cursor = connect_mongo()
 
     print('Checking out new record...')
-    record = cursor.find_and_modify(
-        query={"status": "NEW"},
-        update={"$set": {"status": "PENDING",
-                         "started": datetime.now()}})
+    if dry_run:
+        print('metadata: ', metadata)
+        record = cursor.find_one({"status": "NEW"})
+    else:
+        record = cursor.find_and_modify(
+            query={"status": "NEW"},
+            update={"$set": {"status": "PENDING",
+                             "metadata": metadata,
+                             "started": datetime.now()}})
 
     if record is None:
         print('No suitable ("status":"NEW") record found in DB')
@@ -61,94 +93,43 @@ def run_task(task, task_env):
 
     try:
         stdout, stderr = '', ''
-        task_env['record'] = dumps(record)
+        env['MONGOTASK_RECORD'] = dumps(record)
 
         comm = subprocess.Popen(
             'sh', stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, env=task_env)
+            stderr=subprocess.PIPE, env=env)
 
-        stdout, stderr = comm.communicate('\n'.join(task['task']))
+        stdout, stderr = comm.communicate('\n'.join(task['job']))
         retcode = comm.poll()
         if retcode:
             raise subprocess.CalledProcessError(retcode, 'sh', output=stdout)
 
-        print('Uploading results...')
-        upload_s3(str(record['_id']), task['output_files'])
-        cursor.find_and_modify(
-            query={"_id": record['_id']},
-            update={"$set": {"status": "COMPLETE",
-                             "stdout": stdout,
-                             "stderr": stderr,
-                             "retcode": retcode,
-                             "completed": datetime.now()}})
+        results = {"status": "COMPLETE", "stdout": stdout,
+                   "stderr": stderr, "retcode": retcode,
+                   "completed": datetime.now()}
+
+        if dry_run:
+            print(results)
+        else:
+            print('Uploading results...')
+            upload_s3(str(record['_id']), task['output_files'])
+            cursor.find_and_modify(
+                query={"_id": record['_id']},
+                update={"$set": results})
 
     except:
         print("Job failed!")
         traceback.print_exc()
 
-        cursor.find_and_modify(
-            query={"_id": record['_id']},
-            update={"$set": {"status": "FAILED",
-                             "stdout": stdout,
-                             "stderr": stderr,
-                             "retcode": retcode,
-                             "completed": datetime.now()}})
-
-
-def setup_secure_env(env='.env'):
-    """
-    Load (secret) environment variables from a file into current
-    environment
-
-    Returns
-    --------
-    original_env : dict
-        The original environment
-    """
-    original_env = os.environ.copy()
-    with open(env) as f:
-        print('Loading secret environment variables from %s...' % env)
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            key, value = [e.strip() for e in line.split('=')]
-            os.environ[key] = value.strip()
-    return original_env
-
-
-def connect_mongo():
-    uri = 'mongodb://%s:%s@%s' % (os.environ['MONGO_USER'],
-                                  os.environ['MONGO_PASSWORD'],
-                                  os.environ['MONGO_URL'])
-    client = MongoClient(uri, safe=True)
-    cursor = getattr(client, os.environ['MONGO_DATABASE'])
-    return getattr(cursor, os.environ['MONGO_COLLECTION'])
-
-
-def upload_s3(prefix, filenames):
-    conn = boto.connect_s3(os.environ['AWS_ACCESS_KEY_ID'],
-                           os.environ['AWS_SECRET_ACCESS_KEY'])
-    bucket = conn.get_bucket(os.environ['AWS_S3_BUCKET_NAME'])
-
-    for filename in filenames:
-        if os.path.exists(filename):
-            k = Key(bucket)
-            k.key = os.path.join(prefix, filename)
-            k.set_contents_from_filename(filename)
+        results = {"status": "FAILED", "stdout": stdout,
+                   "stderr": stderr, "retcode": retcode,
+                   "completed": datetime.now()}
+        if dry_run:
+            print(results)
         else:
-            print('%s does not exist!' % filename)
-
-
-@contextlib.contextmanager
-def enter_temp_directory():
-    """Create and enter a temporary directory; used as context manager."""
-    temp_dir = tempfile.mkdtemp()
-    cwd = os.getcwd()
-    os.chdir(temp_dir)
-    yield
-    os.chdir(cwd)
-    shutil.rmtree(temp_dir)
+            cursor.find_and_modify(
+                query={"_id": record['_id']},
+                update={"$set": results})
 
 
 if __name__ == '__main__':

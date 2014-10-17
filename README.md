@@ -1,8 +1,8 @@
 mongo-task
 ==========
 
-Small wrapper for running large-scale embarrassingly parallel with MongoDB
-+ Amazon S3.
+Small wrapper for running large-scale embarrassingly parallel with
+MongoDB and Amazon S3.
 
 ```
 $ mongo-task -t task.yaml
@@ -17,6 +17,8 @@ $ mongo-task -t task.yaml
    - Upload any declared output files to Amazon S3
    - Record the status, and any stdout/stderr in the DB
 
+Configuration
+-------------
 
 The task is declared in a simple YAML markup
 
@@ -25,13 +27,13 @@ $ cat task.yaml
 output_files:
     - output.gz
 
-task:
+job:
     - source activate py3
     - echo HELLO > output
     - gzip output
 ```
 
-You also need to specify some secret environment variables for connecting
+You might also need to specify some secret environment variables for connecting
 to the DB and S3. Put them in a file named `.env`
 
 ```
@@ -45,5 +47,8 @@ AWS_ACCESS_KEY_ID = <your-access-key>
 AWS_SECRET_ACCESS_KEY = <your-secret-key>
 AWS_S3_BUCKET_NAME = <your-bucket>
 ```
+
+Execution Environment
+---------------------
 
 
