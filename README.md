@@ -1,8 +1,8 @@
 mongo-task
 ==========
 
-Small wrapper for running large-scale embarrassingly parallel with
-MongoDB and Amazon S3.
+mongo-task is a small utility for running large-scale distributed embarrassingly
+parallel jobs with MongoDB and Amazon S3.
 
 ```
 $ mongo-task -t task.yaml
@@ -50,5 +50,8 @@ AWS_S3_BUCKET_NAME = <your-bucket>
 
 Execution Environment
 ---------------------
+The job will be executed in a temporary directory. The environment variable
+MONGOTASK_RECORD will be available, containing the record for the job checked
+out from the DB
 
 

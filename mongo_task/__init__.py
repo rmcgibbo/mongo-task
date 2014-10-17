@@ -1,4 +1,8 @@
-#!/usr/bin/env python
+"""
+mongo-task is a small utility for running large-scale distributed embarrassingly
+parallel jobs with MongoDB and Amazon S3.
+"""
+
 from __future__ import print_function, absolute_import
 import os
 import sys
@@ -24,12 +28,13 @@ REQUIRED_ENV_VARS = {
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-e', '--env', help='Environment variable',
-                        default='.env')
-    parser.add_argument('-t', '--task', help='Task YAML file',
-                        default='task.yaml')
-    parser.add_argument('--dry-run', action='store_true', help="Don't upload")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('-e', '--env', help='Path to environment variables '
+                        'file. (default .env)', default='.env')
+    parser.add_argument('-t', '--task', help='Path to task spec (YAML) file. '
+                        '(default task.yaml)', default='task.yaml')
+    parser.add_argument('--dry-run', action='store_true', help="Don't upload "
+                        "to S3 or modify DB")
     args = parser.parse_args()
 
     original_env = setup_secure_env(args.env)
