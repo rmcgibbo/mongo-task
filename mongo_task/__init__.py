@@ -9,6 +9,7 @@ import sys
 import yaml
 import argparse
 import hashlib
+import warnings
 
 from bson.json_util import dumps
 from datetime import datetime
@@ -34,14 +35,26 @@ def main():
                         '(default task.yaml)', default='task.yaml')
     parser.add_argument('--dry-run', action='store_true', help="Don't upload "
                         "to S3 or modify DB")
+    parser.add_argument('--spoof-record', default=None, help='Spoof a record, '
+                        'instead of downloading from Mongo. Implies --dry-run. '
+                        'This is a debugging option. ')
     args = parser.parse_args()
 
+    # set up env variables from --env
     original_env = setup_secure_env(args.env)
-
     for key in REQUIRED_ENV_VARS:
         if key not in os.environ:
-            raise KeyError('env variable %s required' % key)
+            warnings.warn('env variable %s required' % key)
 
+    # connect to mongodb, or "spoof" it
+    if args.spoof_record is None:
+        cursor = connect_mongo()
+    else:
+        args.dry_run = True
+        cursor = argparse.Namespace(find_one=lambda x: args.spoof_record)
+
+    # read the task.yaml file and set up metadata for the task that
+    # will be synced to the DB as the job is pending
     with open(args.task) as f:
         task = yaml.load(f)
     with open(args.task) as f:
@@ -51,17 +64,19 @@ def main():
             'hostname': os.uname()[1]
         }
 
+    # get the key entries out of the task file
     if 'job' not in task:
         raise ValueError('task.yaml missing "job" entry')
     if 'output_files' not in task:
         task['output_files'] = []
 
+    # run the task inside a temp dir
     with enter_temp_directory():
         metadata['cwd'] = os.path.abspath(os.curdir)
-        run_task(task, original_env, metadata, dry_run=args.dry_run)
+        run_task(task, original_env, metadata, cursor, dry_run=args.dry_run)
 
 
-def run_task(task, env, metadata, dry_run=False):
+def run_task(task, env, metadata, cursor, dry_run=False):
     """
     Parameters
     ----------
@@ -75,14 +90,15 @@ def run_task(task, env, metadata, dry_run=False):
         'MONGOTASK_RECORD' env var, containing the job record
     metadata : dict
         Exta stuff to put in DB
+    cursor : pymongo.collection.Collection
+        Cursor for pymongo
     dry_run : bool, default = False
         If True, don't upload upload to the DB or push to S3
     """
-    cursor = connect_mongo()
 
     print('Checking out new record...')
     if dry_run:
-        print('metadata: ', metadata)
+        print('DRY RUN. METADATA:\n', metadata)
         record = cursor.find_one({"status": "NEW"})
     else:
         record = cursor.find_and_modify(
@@ -104,7 +120,7 @@ def run_task(task, env, metadata, dry_run=False):
         "completed": datetime.now()}
 
     if dry_run:
-        print(results)
+        print('DRY RUN STATUS:\n', results)
     elif success:
         print('Uploading results...')
         upload_s3(str(record['_id']), task['output_files'])
