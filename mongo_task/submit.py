@@ -118,6 +118,7 @@ def run_task(task, env, metadata, cursor, dry_run=False):
     """
 
     print('Checking out new record...')
+    checkout_time = datetime.now()
     if dry_run:
         print('DRY RUN. METADATA:\n', metadata)
         record = cursor.find_one({"status": "NEW"})
@@ -128,7 +129,7 @@ def run_task(task, env, metadata, cursor, dry_run=False):
             query={"status": "NEW"},
             update={"$set": {"status": "PENDING",
                              "metadata": metadata,
-                             "started": datetime.now()}})
+                             "started": checkout_time}})
 
     if record is None:
         print('No suitable ("status":"NEW") record found in DB')
@@ -137,9 +138,10 @@ def run_task(task, env, metadata, cursor, dry_run=False):
     env['MONGOTASK_RECORD'] = dumps(record)
     stdout, stderr, success = execute(task['job'], env, dry_run)
     results = {
-        "status": "COMPLETE" if success else "FAILURE",
+        "status": "COMPLETED" if success else "FAILED",
         "stdout": stdout,
         "stderr": stderr,
+        'elapsed': datetime.now() - checkout_time,
         "completed": datetime.now()}
 
     if dry_run:

@@ -23,10 +23,11 @@ def execute(commands, env=None, dry_run=False):
         if dry_run:
             print('\033[92mstdout\033[0m: %s' % stdout_)
             print('\033[93mstderr\033[0m: %s' % stderr_)
-            print('\033[93mretcode\033[0m: %s' % retcode)
+            print('\033[91mretcode\033[0m: %s' % retcode)
 
         stdout.append(stdout_)
         stderr.append(stderr_)
         retcodes.append(retcode)
 
-    return '\n'.join(stdout), '\n'.join(stderr), any(r > 0 for r in retcodes)
+    success = all(r == 0 for r in retcodes)
+    return '\n'.join(stdout), '\n'.join(stderr), success
