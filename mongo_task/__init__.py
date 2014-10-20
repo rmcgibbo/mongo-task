@@ -18,6 +18,7 @@ from datetime import datetime
 from .env import setup_secure_env
 from .utils import enter_temp_directory
 from .services import upload_s3, connect_mongo
+from .proc import execute
 
 
 REQUIRED_ENV_VARS = {
@@ -96,45 +97,28 @@ def run_task(task, env, metadata, dry_run=False):
         print('No suitable ("status":"NEW") record found in DB')
         exit(1)
 
-    try:
-        stdout, stderr = '', ''
-        env['MONGOTASK_RECORD'] = dumps(record)
+    env['MONGOTASK_RECORD'] = dumps(record)
+    stdout, stderr, success = execute(task['job'], env)
+    results = {
+        "status": "COMPLETE" if success else "FAILURE",
+        "stdout": stdout,
+        "stderr": stderr,
+        "retcodes": retcodes,
+        "completed": datetime.now()}
 
-        comm = subprocess.Popen(
-            'sh', stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, env=env)
-
-        stdout, stderr = comm.communicate('\n'.join(task['job']))
-        retcode = comm.poll()
-        if retcode:
-            raise subprocess.CalledProcessError(retcode, 'sh', output=stdout)
-
-        results = {"status": "COMPLETE", "stdout": stdout,
-                   "stderr": stderr, "retcode": retcode,
-                   "completed": datetime.now()}
-
-        if dry_run:
-            print(results)
-        else:
-            print('Uploading results...')
-            upload_s3(str(record['_id']), task['output_files'])
-            cursor.find_and_modify(
-                query={"_id": record['_id']},
-                update={"$set": results})
-
-    except:
-        print("Job failed!")
-        traceback.print_exc()
-
-        results = {"status": "FAILED", "stdout": stdout,
-                   "stderr": stderr, "retcode": retcode,
-                   "completed": datetime.now()}
-        if dry_run:
-            print(results)
-        else:
-            cursor.find_and_modify(
-                query={"_id": record['_id']},
-                update={"$set": results})
+    if dry_run:
+        print(results)
+    elif success:
+       print('Uploading results...')
+        upload_s3(str(record['_id']), task['output_files'])
+        cursor.find_and_modify(
+            query={"_id": record['_id']},
+            update={"$set": results})
+    else:
+        # failure
+        cursor.find_and_modify(
+            query={"_id": record['_id']},
+            update={"$set": results})
 
 
 if __name__ == '__main__':
