@@ -34,6 +34,8 @@ def main():
                         'file. (default .env)', default='.env')
     parser.add_argument('-t', '--task', help='Path to task spec (YAML) file. '
                         '(default task.yaml)', default='task.yaml')
+    parser.add_argument('--loop', action='store_true', help='Loop the entire '
+                        'process untill no more jobs left in DB')
     debug_group = parser.add_argument_group('debugging arguments')
     debug_group.add_argument('--dry-run', action='store_true', help="Don't "
                              "upload to S3 or modify DB")
@@ -79,16 +81,20 @@ def main():
     # name of the directory job was submitted from
     submit_dir = os.path.abspath(os.curdir)
 
-    # run the task inside a temp dir
-    with enter_temp_directory():
-        metadata['cwd'] = os.path.abspath(os.curdir)
-        run_task(task, original_env, metadata, cursor, dry_run=args.dry_run)
+    while True:
+        # run the task inside a temp dir
+        with enter_temp_directory():
+            metadata['cwd'] = os.path.abspath(os.curdir)
+            run_task(task, original_env, metadata, cursor, dry_run=args.dry_run)
 
-        # optionally tar up and copy out the tempdir
-        if args.tar_all_out:
-            dirname = os.path.basename(metadata['cwd'])
-            execute(['cd ..; tar czf {dirname}.tgz {dirname}'.format(dirname=dirname)])
-            shutil.move('../{dirname}.tgz'.format(dirname=dirname), submit_dir)
+            # optionally tar up and copy out the tempdir
+            if args.tar_all_out:
+                dirname = os.path.basename(metadata['cwd'])
+                execute(['cd ..; tar czf {dirname}.tgz {dirname}'.format(dirname=dirname)])
+                shutil.move('../{dirname}.tgz'.format(dirname=dirname), submit_dir)
+
+        if not args.loop:
+            break
 
 
 def run_task(task, env, metadata, cursor, dry_run=False):
