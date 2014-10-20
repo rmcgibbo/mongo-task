@@ -29,3 +29,10 @@ def main():
         return
 
     print(dumps(matches, indent=2))
+
+
+#    for o in cursor.find({'status': 'PENDING'}):
+#        print(o)
+#        cursor.find_and_modify(
+#            query={'_id': o['_id']},
+#            update={'cid': o['cid'], 'status': 'NEW'})
