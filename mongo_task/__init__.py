@@ -7,6 +7,7 @@ from __future__ import print_function, absolute_import
 import os
 import sys
 import yaml
+import shutil
 import argparse
 import hashlib
 import warnings
@@ -38,6 +39,9 @@ def main():
     parser.add_argument('--spoof-record', default=None, help='Spoof a record, '
                         'instead of downloading from Mongo. Implies --dry-run. '
                         'This is a debugging option. ', type=loads)
+    parser.add_argument('--tar-all-out', default=None, help='Tar up the entire '
+                        'work directory', action='store_true')
+
     args = parser.parse_args()
 
     # set up env variables from --env
@@ -70,10 +74,19 @@ def main():
     if 'output_files' not in task:
         task['output_files'] = []
 
+    # name of the directory job was submitted from
+    submit_dir = os.path.abspath(os.curdir)
+
     # run the task inside a temp dir
     with enter_temp_directory():
         metadata['cwd'] = os.path.abspath(os.curdir)
         run_task(task, original_env, metadata, cursor, dry_run=args.dry_run)
+
+        # optionally tar up and copy out the tempdir
+        if args.tar_all_out:
+            dirname = os.path.basename(metadata['cwd'])
+            execute(['cd ..; tar czf {dirname}.tgz {dirname}'.format(dirname=dirname)])
+            shutil.move('../{dirname}.tgz'.format(dirname=dirname), submit_dir)
 
 
 def run_task(task, env, metadata, cursor, dry_run=False):
@@ -101,6 +114,7 @@ def run_task(task, env, metadata, cursor, dry_run=False):
         print('DRY RUN. METADATA:\n', metadata)
         record = cursor.find_one({"status": "NEW"})
         assert isinstance(record, dict)
+        print('DRY RUN RECORD:\n', record)
     else:
         record = cursor.find_and_modify(
             query={"status": "NEW"},
@@ -113,7 +127,7 @@ def run_task(task, env, metadata, cursor, dry_run=False):
         exit(1)
 
     env['MONGOTASK_RECORD'] = dumps(record)
-    stdout, stderr, success = execute(task['job'], env)
+    stdout, stderr, success = execute(task['job'], env, dry_run)
     results = {
         "status": "COMPLETE" if success else "FAILURE",
         "stdout": stdout,
@@ -133,7 +147,3 @@ def run_task(task, env, metadata, cursor, dry_run=False):
         cursor.find_and_modify(
             query={"_id": record['_id']},
             update={"$set": results})
-
-
-if __name__ == '__main__':
-    main()
