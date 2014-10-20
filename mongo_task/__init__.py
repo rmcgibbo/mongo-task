@@ -34,14 +34,16 @@ def main():
                         'file. (default .env)', default='.env')
     parser.add_argument('-t', '--task', help='Path to task spec (YAML) file. '
                         '(default task.yaml)', default='task.yaml')
-    parser.add_argument('--dry-run', action='store_true', help="Don't upload "
-                        "to S3 or modify DB")
-    parser.add_argument('--spoof-record', default=None, help='Spoof a record, '
-                        'instead of downloading from Mongo. Implies --dry-run. '
-                        'This is a debugging option. ', type=loads)
-    parser.add_argument('--tar-all-out', default=None, help='Tar up the entire '
-                        'work directory', action='store_true')
-
+    debug_group = parser.add_argument_group('debugging arguments')
+    debug_group.add_argument('--dry-run', action='store_true', help="Don't "
+                             "upload to S3 or modify DB")
+    debug_group.add_argument('--spoof-record', default=None, help='Spoof a '
+                             'record, instead of downloading from Mongo. '
+                             'Implies --dry-run. ', type=loads)
+    debug_group.add_argument('--tar-all-out', default=None, help='Tar up '
+                             'the entire work directory, and copy it '
+                             'to the current directory, after the job '
+                             'finishes.', action='store_true')
     args = parser.parse_args()
 
     # set up env variables from --env
