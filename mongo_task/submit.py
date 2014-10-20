@@ -141,7 +141,7 @@ def run_task(task, env, metadata, cursor, dry_run=False):
         "status": "COMPLETED" if success else "FAILED",
         "stdout": stdout,
         "stderr": stderr,
-        'elapsed': datetime.now() - checkout_time,
+        'elapsed': (datetime.now() - checkout_time).total_seconds(),
         "completed": datetime.now()}
 
     if dry_run:
