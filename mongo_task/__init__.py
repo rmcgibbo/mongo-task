@@ -8,8 +8,6 @@ import os
 import sys
 import yaml
 import argparse
-import subprocess
-import traceback
 import hashlib
 
 from bson.json_util import dumps
@@ -103,13 +101,12 @@ def run_task(task, env, metadata, dry_run=False):
         "status": "COMPLETE" if success else "FAILURE",
         "stdout": stdout,
         "stderr": stderr,
-        "retcodes": retcodes,
         "completed": datetime.now()}
 
     if dry_run:
         print(results)
     elif success:
-       print('Uploading results...')
+        print('Uploading results...')
         upload_s3(str(record['_id']), task['output_files'])
         cursor.find_and_modify(
             query={"_id": record['_id']},

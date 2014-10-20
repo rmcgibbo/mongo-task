@@ -8,16 +8,16 @@ def execute(commands, env=None):
     stdout = []
     stderr = []
     retcodes = []
-    
+
     for command in commands:
-        
+
         comm = subprocess.Popen(
             'sh', stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, env=env)
-        
+
         stdout_, stderr_ = comm.communicate(command)
         retcode = comm.poll()
-        
+
         stdout.append(stdout_)
         stderr.append(stderr_)
         retcodes.append(retcode)
