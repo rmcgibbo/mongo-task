@@ -11,7 +11,7 @@ import argparse
 import hashlib
 import warnings
 
-from bson.json_util import dumps
+from bson.json_util import dumps, loads
 from datetime import datetime
 
 from .env import setup_secure_env
@@ -37,7 +37,7 @@ def main():
                         "to S3 or modify DB")
     parser.add_argument('--spoof-record', default=None, help='Spoof a record, '
                         'instead of downloading from Mongo. Implies --dry-run. '
-                        'This is a debugging option. ')
+                        'This is a debugging option. ', type=loads)
     args = parser.parse_args()
 
     # set up env variables from --env
@@ -100,6 +100,7 @@ def run_task(task, env, metadata, cursor, dry_run=False):
     if dry_run:
         print('DRY RUN. METADATA:\n', metadata)
         record = cursor.find_one({"status": "NEW"})
+        assert isinstance(record, dict)
     else:
         record = cursor.find_and_modify(
             query={"status": "NEW"},
