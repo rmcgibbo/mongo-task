@@ -10,6 +10,9 @@ setup(
     version = __version__,
     license = 'MIT',
     url = 'https://github.com/rmcgibbo/mongo-task',
-    entry_points = {'console_scripts':
-              ['mongo-task = mongo_task:main']},
+    entry_points = {
+        'console_scripts':
+            ['mongo-task-submit = mongo_task.submit:main',
+             'mongo-task-status = mongo_task.status:main',
+             ]},
     packages= ['mongo_task'])

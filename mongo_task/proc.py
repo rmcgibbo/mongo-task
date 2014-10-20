@@ -18,14 +18,15 @@ def execute(commands, env=None, dry_run=False):
             stderr=subprocess.PIPE, env=env)
 
         stdout_, stderr_ = comm.communicate(command)
+        retcode = comm.poll()
+
         if dry_run:
             print('\033[92mstdout\033[0m: %s' % stdout_)
             print('\033[93mstderr\033[0m: %s' % stderr_)
-
-        retcode = comm.poll()
+            print('\033[93mretcode\033[0m: %s' % retcode)
 
         stdout.append(stdout_)
         stderr.append(stderr_)
         retcodes.append(retcode)
 
-    return '\n'.join(stdout), '\n'.join(stderr), all(r > 0 for r in retcodes)
+    return '\n'.join(stdout), '\n'.join(stderr), any(r > 0 for r in retcodes)
