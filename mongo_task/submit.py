@@ -80,18 +80,23 @@ def main():
 
     # name of the directory job was submitted from
     submit_dir = os.path.abspath(os.curdir)
+    sucesses = []
 
     while True:
         # run the task inside a temp dir
         with enter_temp_directory():
             metadata['cwd'] = os.path.abspath(os.curdir)
-            run_task(task, original_env, metadata, cursor, dry_run=args.dry_run)
+            success = run_task(task, original_env, metadata, cursor, dry_run=args.dry_run)
+            sucesses.append(success)
 
             # optionally tar up and copy out the tempdir
             if args.tar_all_out:
                 dirname = os.path.basename(metadata['cwd'])
                 execute(['cd ..; tar czf {dirname}.tgz {dirname}'.format(dirname=dirname)])
                 shutil.move('../{dirname}.tgz'.format(dirname=dirname), submit_dir)
+
+        if len(sucesses) >= 3 and all(not s for s in sucesses[-3:]):
+            raise RuntimeError('Three consecutive job failires!')
 
         if not args.loop:
             break
@@ -110,11 +115,16 @@ def run_task(task, env, metadata, cursor, dry_run=False):
         task execution environment. Additionally, this method will set up
         'MONGOTASK_RECORD' env var, containing the job record
     metadata : dict
-        Exta stuff to put in DB
+        Extra stuff to put in DB
     cursor : pymongo.collection.Collection
         Cursor for pymongo
     dry_run : bool, default = False
         If True, don't upload upload to the DB or push to S3
+
+    Returns
+    -------
+    success : bool
+        Whether the job succeeded.
     """
 
     print('Checking out new record...')
@@ -147,13 +157,16 @@ def run_task(task, env, metadata, cursor, dry_run=False):
     if dry_run:
         print('DRY RUN STATUS:\n', results)
     elif success:
-        print('Uploading results...')
+        print('Success. Uploading results...')
         upload_s3(str(record['_id']), task['output_files'])
         cursor.find_and_modify(
             query={"_id": record['_id']},
             update={"$set": results})
     else:
         # failure
+        print('Job failure!\n', results)
         cursor.find_and_modify(
             query={"_id": record['_id']},
             update={"$set": results})
+
+    return success
