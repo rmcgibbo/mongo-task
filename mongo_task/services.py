@@ -7,7 +7,6 @@ import boto
 from boto.s3.key import Key
 from pymongo import MongoClient
 from pymongo.cursor import Cursor
-from pymongo.connection import Connection
 from pymongo.errors import AutoReconnect
 
 
@@ -31,9 +30,9 @@ def reconnect(f):
 
 
 Cursor._Cursor__send_message = reconnect(Cursor._Cursor__send_message)
-Connection._send_message = reconnect(Connection._send_message)
-Connection._send_message_with_response = reconnect(Connection._send_message_with_response)
-Connection._Connection__find_master = reconnect(Connection._Connection__find_master)
+MongoClient._send_message = reconnect(MongoClient._send_message)
+MongoClient._send_message_with_response = reconnect(MongoClient._send_message_with_response)
+MongoClient._MongoClient__try_node = reconnect(MongoClient._MongoClient__try_node)
 
 
 def connect_mongo():
